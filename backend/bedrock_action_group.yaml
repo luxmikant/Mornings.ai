@@ -1,0 +1,132 @@
+openapi: 3.0.0
+info:
+  title: Agentic PR Manager Tools
+  version: 1.0.0
+  description: Tools for generating culturally accurate, personalized greeting cards.
+paths:
+  /cultural-context:
+    get:
+      summary: Get cultural context for a date
+      description: Retrieves the festivals, national holidays, or tithis for a given date.
+      operationId: get_cultural_context
+      parameters:
+        - name: date
+          in: query
+          description: The date in YYYY-MM-DD format
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+  
+  /search-shlokas:
+    get:
+      summary: Search Shlokas
+      description: Search the verified knowledge base for Sanskrit verses and blessings.
+      operationId: search_shlokas
+      parameters:
+        - name: query
+          in: query
+          description: The search term (e.g., 'Diwali blessing', 'Ganesha')
+          required: true
+          schema:
+            type: string
+        - name: deity
+          in: query
+          description: Filter by specific deity if requested by user
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  
+  /cedar-validate:
+    post:
+      summary: Validate Policy
+      description: Validates if the user's archetype is authorized to generate a greeting for the event type.
+      operationId: cedar_validate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                archetype:
+                  type: string
+                event_type:
+                  type: string
+      responses:
+        '200':
+          description: Returns ALLOW or DENY
+          content:
+            application/json:
+              schema:
+                type: object
+  
+  /generate-backdrop:
+    post:
+      summary: Generate Image Backdrop
+      description: Generates an AI backdrop image using Amazon Titan Image Generator.
+      operationId: generate_backdrop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+                  description: Visual description of the background
+      responses:
+        '200':
+          description: Returns public URL of generated image
+          content:
+            application/json:
+              schema:
+                type: object
+  
+  /compose-image:
+    post:
+      summary: Compose Final Greeting Card
+      description: Composites the headline, shloka, background, and user portrait into a final asset.
+      operationId: compose_image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                background_url:
+                  type: string
+                portrait_url:
+                  type: string
+                headline:
+                  type: string
+                shloka:
+                  type: string
+                user_name:
+                  type: string
+                user_designation:
+                  type: string
+      responses:
+        '200':
+          description: Returns public URL of the final composed image
+          content:
+            application/json:
+              schema:
+                type: object
