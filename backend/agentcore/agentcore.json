@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "PrAgent",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "PrAgent"
+  },
+  "runtimes": [
+    {
+      "name": "PRAgentRuntime",
+      "entrypoint": "agentcore_app.py",
+      "type": "byo",
+      "language": "Python",
+      "framework": "Strands",
+      "build": "CodeZip",
+      "codeLocation": ".",
+      "runtimeVersion": "PYTHON_3_12"
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "datasets": [],
+  "capacityProviders": [],
+  "payments": []
+}
