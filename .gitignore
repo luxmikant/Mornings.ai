@@ -1,0 +1,9 @@
+hs_err_pid*.log
+replay_pid*.log
+.env
+*.db
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+node_modules/
