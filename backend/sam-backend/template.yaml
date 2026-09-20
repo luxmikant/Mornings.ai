@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Mornings.ai — AWS Serverless Backend
+  Lambda + API Gateway + DynamoDB + S3 + EventBridge
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        CARDS_TABLE: !Ref CardsTable
+        ASSETS_BUCKET: !Ref AssetsBucket
+        BEDROCK_MODEL_ID: anthropic.claude-3-haiku-20240307-v1:0
+        BEDROCK_IMAGE_MODEL_ID: amazon.titan-image-generator-v2:0
+        AWS_REGION_NAME: us-east-1
+
+Resources:
+  # ═══════════════════════════════════════════════════════════
+  # API Gateway — HTTP API (v2, faster + cheaper)
+  # ═══════════════════════════════════════════════════════════
+  MorningsApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Amz-Date
+          - X-Api-Key
+        MaxAge: 600
+
+  # ═══════════════════════════════════════════════════════════
+  # Lambda Functions
+  # ═══════════════════════════════════════════════════════════
+  PreferencesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: mornings-preferences-handler
+      CodeUri: functions/preferences/
+      Handler: app.lambda_handler
+      Description: CRUD for user preferences
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        CreatePreferences:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MorningsApi
+            Path: /api/preferences
+            Method: POST
+        GetPreferences:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MorningsApi
+            Path: /api/preferences/{userId}
+            Method: GET
+
+  EventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: mornings-events-handler
+      CodeUri: functions/events/
+      Handler: app.lambda_handler
+      Description: Event subscriptions and card history
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CardsTable
+      Events:
+        GetEvents:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MorningsApi
+            Path: /api/events/{userId}
+            Method: GET
+        GetCards:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MorningsApi
+            Path: /api/cards/{userId}
+            Method: GET
+
+  GenerateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: mornings-generate-card
+      CodeUri: functions/generate/
+      Handler: app.lambda_handler
+      Description: AI card generation brain (Strands + Bedrock)
+      Timeout: 120
+      MemorySize: 1024
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CardsTable
+        - S3CrudPolicy:
+            BucketName: !Ref AssetsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: "*"
+      Events:
+        GenerateCard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MorningsApi
+            Path: /api/generate
+            Method: POST
+        # Daily scheduled trigger at 06:00 AM IST (00:30 UTC)
+        DailyTrigger:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30, 0, *, *, ?, *)
+            Description: Daily autonomous card generation for upcoming events
+            Input: '{"source": "eventbridge", "action": "daily_generate"}'
+
+  # ═══════════════════════════════════════════════════════════
+  # DynamoDB Tables
+  # ═══════════════════════════════════════════════════════════
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: mornings-users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+  CardsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: mornings-cards
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: cardId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: cardId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  # ═══════════════════════════════════════════════════════════
+  # S3 Bucket for generated card assets
+  # ═══════════════════════════════════════════════════════════
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub mornings-card-assets-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: ["*"]
+            AllowedMethods: [GET]
+            AllowedHeaders: ["*"]
+
+  AssetsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AssetsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub arn:aws:s3:::${AssetsBucket}/cards/*
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${MorningsApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  UsersTableName:
+    Description: DynamoDB Users Table
+    Value: !Ref UsersTable
+  CardsTableName:
+    Description: DynamoDB Cards Table
+    Value: !Ref CardsTable
+  AssetsBucketName:
+    Description: S3 Assets Bucket
+    Value: !Ref AssetsBucket
